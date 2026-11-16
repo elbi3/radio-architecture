@@ -1,0 +1,90 @@
+
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recordings and radio demo</title>
+<style>
+:root{--bg:#f3f5f4;--ink:#16211d;--mute:#5b6b65;--line:#c9d3cf;--pane:#fff;--acc:#0f6b57;--err:#a3281d}
+@media(prefers-color-scheme:dark){:root{--bg:#121a17;--ink:#e6efeb;--mute:#93a49d;--line:#2d3b36;--pane:#19231f;--acc:#4fc3a6;--err:#ff8a7a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,'Times New Roman',serif;padding:20px;max-width:980px;margin-inline:auto}
+h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.05rem;margin:0 0 2px}
+p{margin:0 0 8px;color:var(--mute)}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:12px 0}
+.seg button{border-radius:0}.seg button.on{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start}
+.card{background:var(--pane);border:1px solid var(--line);border-radius:4px;padding:12px;margin-bottom:12px}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+input,button{font:inherit;padding:6px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px}
+input{flex:1;min-width:140px}button{cursor:pointer}button.go{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+button.dx{border-color:var(--err);color:var(--err)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#now{font:.85rem ui-monospace,Menlo,monospace;color:var(--mute);overflow-wrap:anywhere}
+#st{font-weight:bold;margin:0 0 6px}
+pre{margin:0;background:var(--pane);border:1px solid var(--line);border-left:4px solid var(--acc);padding:10px;overflow:auto;font-size:.8rem;min-height:200px;white-space:pre-wrap;overflow-wrap:anywhere}
+pre.err{border-left-color:var(--err)}
+</style></head><body>
+<h1>Recordings and radio demo</h1>
+<p>Work top to bottom. Each step uses what you made in the one before, for the database you pick here.</p>
+<div class="top">
+  <span class="seg"><button id="b-pg" class="on">PostgreSQL</button><button id="b-mongo">MongoDB</button></span>
+  <span id="now"></span>
+</div>
+<div class="cols"><div>
+ <div class="card"><h2>1. Create a user</h2><p>The owner of everything below.</p>
+  <div class="row"><input id="email" placeholder="Email" aria-label="Email"><input id="uname" value="Ana" aria-label="Display name"></div>
+  <div class="row"><button class="go" id="mkUser">Create user</button><button class="dx" id="rmUser">Delete user</button></div></div>
+ <div class="card"><h2>2. Create a recording</h2><p>New recordings are private.</p>
+  <div class="row"><input id="rtitle" value="Porch demo" aria-label="Recording title"></div>
+  <div class="row"><button class="go" id="mkRec">Create recording</button><button id="rename">Rename it</button><button class="dx" id="rmRec">Delete recording</button></div></div>
+ <div class="card"><h2>3. Allow it on radio</h2><p>Marks it uploaded and visible to radio. Until then the next steps are rejected.</p>
+  <div class="row"><button class="go" id="goRadio">Put recording on radio</button></div></div>
+ <div class="card"><h2>4. Create a station</h2><p>Each user can have one.</p>
+  <div class="row"><input id="sname" value="Ana's Radio" aria-label="Station name"></div>
+  <div class="row"><button class="go" id="mkSt">Create station</button><button id="rnSt">Rename it</button><button class="dx" id="rmSt">Delete station</button></div></div>
+ <div class="card"><h2>5. Put the recording in the station</h2>
+  <div class="row"><button class="go" id="add">Add to station queue</button><button id="view">View station and queue</button></div></div>
+ <div class="card"><h2>Browse everything</h2>
+  <div class="row"><button data-l="users">All users</button><button data-l="recordings">All recordings</button><button data-l="stations">All stations</button></div></div>
+</div>
+<div><p id="st">Results appear here.</p><pre id="out"></pre></div></div>
+<script>
+const $=s=>document.getElementById(s), cur={pg:{},mongo:{}}; let db='pg';
+const S=()=>cur[db], idOf=j=>j&&(j.id||j._id);
+const WORDS={200:'OK',201:'Created',400:'Bad request',404:'Not found',409:'Already exists',422:'Rejected by a rule',500:'Server error'};
+function paint(){
+  const s=S(), f=v=>v?v.slice(0,8)+'...':'none yet';
+  $('now').textContent=`user: ${f(s.user)}   recording: ${f(s.rec)}   station: ${f(s.st)}`;
+  $('b-pg').className=db==='pg'?'on':''; $('b-mongo').className=db==='mongo'?'on':'';
+}
+function say(ok,title,data){$('st').textContent=title;$('out').className=ok?'':'err';$('out').textContent=data===undefined?'':JSON.stringify(data,null,2);}
+async function api(method,path,body){
+  const r=await fetch(`/api/${db}/${path}`,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  say(r.ok,`${r.status} ${WORDS[r.status]||''}: ${method} /api/${db}/${path}`,j);
+  return r.ok?j:null;
+}
+const need=(k,label)=>S()[k]||(say(false,`Not yet: ${label}`,undefined),false);
+const on=(id,fn)=>$(id).onclick=async()=>{await fn();paint();};
+ 
+$('b-pg').onclick=()=>{db='pg';paint();say(true,'Switched to PostgreSQL');};
+$('b-mongo').onclick=()=>{db='mongo';paint();say(true,'Switched to MongoDB. IDs here are separate from PostgreSQL.');};
+on('mkUser',async()=>{const e=$('email').value.trim()||`ana${Math.floor(Math.random()*9999)}@example.com`;
+  const j=await api('POST','users',{email:e,displayName:$('uname').value});if(j){cur[db]={user:idOf(j)};$('email').value='';}});
+on('rmUser',async()=>{if(need('user','create a user first')&&await api('DELETE','users/'+S().user))cur[db]={};});
+on('mkRec',async()=>{if(!need('user','create a user first'))return;
+  const j=await api('POST','recordings',{ownerId:S().user,title:$('rtitle').value,durationMs:183000});if(j)S().rec=idOf(j);});
+on('rename',async()=>{if(need('rec','create a recording first'))await api('PATCH','recordings/'+S().rec,{title:$('rtitle').value});});
+on('rmRec',async()=>{if(need('rec','create a recording first')&&await api('DELETE','recordings/'+S().rec))S().rec=null;});
+on('goRadio',async()=>{if(need('rec','create a recording first'))
+  await api('PATCH','recordings/'+S().rec,{storageState:'uploaded',objectKey:'demo/'+S().rec+'.m4a',visibility:'radio'});});
+on('mkSt',async()=>{if(!need('user','create a user first'))return;
+  const j=await api('POST','stations',{ownerId:S().user,name:$('sname').value});if(j)S().st=idOf(j);});
+on('rnSt',async()=>{if(need('st','create a station first'))await api('PATCH','stations/'+S().st,{name:$('sname').value});});
+on('rmSt',async()=>{if(need('st','create a station first')&&await api('DELETE','stations/'+S().st))S().st=null;});
+on('add',async()=>{if(need('st','create a station first')&&need('rec','create a recording first'))
+  await api('POST',`stations/${S().st}/items`,{recordingId:S().rec});});
+on('view',async()=>{if(need('st','create a station first'))await api('GET','stations/'+S().st);});
+document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>api('GET',b.dataset.l));
+paint();
+</script></body></html>
+ 

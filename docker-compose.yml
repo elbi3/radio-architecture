@@ -1,0 +1,8 @@
+services:
+  postgres:
+    image: postgres:16
+    environment: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: recordings }
+    ports: ["5432:5432"]
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recordings and radio: CRUD check</title>
+<style>
+:root{--bg:#f3f5f4;--ink:#16211d;--mute:#5b6b65;--line:#c9d3cf;--pane:#fff;--acc:#0f6b57;--err:#a3281d}
+@media(prefers-color-scheme:dark){:root{--bg:#121a17;--ink:#e6efeb;--mute:#93a49d;--line:#2d3b36;--pane:#19231f;--acc:#4fc3a6;--err:#ff8a7a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,'Times New Roman',serif;padding:24px;max-width:960px;margin-inline:auto}
+h1{font-size:1.6rem;margin:0 0 4px}p.s{color:var(--mute);margin:0 0 20px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+select,input,textarea,button{font:inherit;padding:7px 10px;border:1px solid var(--line);background:var(--pane);color:var(--ink);border-radius:4px}
+input{flex:1;min-width:240px;font-family:ui-monospace,Menlo,monospace;font-size:.85rem}
+textarea{width:100%;height:120px;font-family:ui-monospace,Menlo,monospace;font-size:.85rem}
+button{cursor:pointer}button.go{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+button.dx{border-color:var(--err);color:var(--err)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+pre{background:var(--pane);border:1px solid var(--line);border-left:4px solid var(--acc);padding:12px;overflow:auto;min-height:120px;font-size:.82rem}
+pre.err{border-left-color:var(--err)}
+table{width:100%;border-collapse:collapse;font-size:.9rem;margin-top:12px}
+td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+tr.r{cursor:pointer}tr.r:hover{background:var(--pane)}td.id{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--mute)}
+td{overflow-wrap:anywhere} pre{white-space:pre-wrap;overflow-wrap:anywhere}
+</style></head><body>
+<h1>Recordings and radio: CRUD check</h1>
+<p class="s">Run the same operations against PostgreSQL and MongoDB. Create a user first, then a recording or station that references it.</p>
+
+<div class="bar">
+  <select id="db" aria-label="Database"><option value="pg">PostgreSQL</option><option value="mongo">MongoDB</option></select>
+  <select id="res" aria-label="Resource"><option>users</option><option>recordings</option><option>stations</option></select>
+  <input id="id" placeholder="Record ID (click a row in the list to fill)" aria-label="Record ID">
+</div>
+<div class="bar">
+  <button id="list">List all</button><button id="get">Read by ID</button>
+  <button id="del" class="dx">Delete by ID</button>
+</div>
+<textarea id="body" aria-label="JSON body"></textarea>
+<div class="bar" style="margin-top:8px">
+  <button id="create" class="go">Create from body</button>
+  <button id="patch">Update ID with body</button>
+  <button id="add">Add recording to station queue</button>
+  <button id="tpl">Reset body template</button>
+</div>
+<pre id="out">Responses appear here.</pre>
+<table id="tbl"></table>
+
+<script>
+const $ = s => document.getElementById(s);
+let userId = '<paste user id>', recId = '<paste recording id>';
+const CREATE = {
+  users: () => ({ email: 'ana' + Math.floor(Math.random()*999) + '@example.com', displayName: 'Ana' }),
+  recordings: () => ({ ownerId: userId, title: 'Porch demo', durationMs: 183000 }),
+  stations: () => ({ ownerId: userId, name: "Ana's Radio" }),
+};
+const PATCH = {
+  users: { displayName: 'Ana B.' },
+  recordings: { storageState: 'uploaded', objectKey: 'demo/porch.m4a', visibility: 'radio', title: 'Porch demo (v2)' },
+  stations: { name: 'Late night radio', isLive: true },
+};
+const tpl = (o) => { $('body').value = JSON.stringify(o, null, 2); };
+const reset = () => tpl(CREATE[$('res').value]());
+const url = (extra = '') => `/api/${$('db').value}/${$('res').value}${extra}`;
+const label = x => x.displayName || x.title || x.name || '';
+
+async function call(method, u, body) {
+  const r = await fetch(u, { method, headers: { 'Content-Type': 'application/json' }, body });
+  const j = await r.json().catch(() => ({}));
+  $('out').className = r.ok ? '' : 'err';
+  $('out').textContent = `${r.status} ${method} ${u}\n` + JSON.stringify(j, null, 2);
+  return r.ok ? j : null;
+}
+function remember(j) {
+  const id = j && (j.id || j._id); if (!id) return;
+  $('id').value = id;
+  if ($('res').value === 'users') userId = id;
+  if ($('res').value === 'recordings') recId = id;
+}
+$('res').onchange = () => { $('tbl').innerHTML = ''; reset(); };
+$('tpl').onclick = reset;
+$('create').onclick = async () => { const j = await call('POST', url(), $('body').value); remember(j); };
+$('get').onclick = async () => remember(await call('GET', url('/' + $('id').value.trim())));
+$('patch').onclick = async () => {
+  if ($('body').value.includes('"ownerId"') || $('body').value.includes('"email"')) tpl(PATCH[$('res').value]);
+  await call('PATCH', url('/' + $('id').value.trim()), $('body').value);
+};
+$('del').onclick = () => call('DELETE', url('/' + $('id').value.trim()));
+$('add').onclick = () => {
+  if ($('res').value !== 'stations') return alert('Switch the resource to stations first.');
+  call('POST', url('/' + $('id').value.trim() + '/items'), JSON.stringify({ recordingId: recId }));
+};
+$('list').onclick = async () => {
+  const rows = await call('GET', url()); if (!rows) return;
+  $('tbl').innerHTML = rows.length ? '<tr><th>ID</th><th>Name</th></tr>' : '<tr><td>Nothing here yet. Create a record first.</td></tr>';
+  rows.forEach(x => {
+    const id = x.id || x._id, tr = document.createElement('tr');
+    tr.className = 'r'; tr.tabIndex = 0;
+    tr.innerHTML = `<td class="id"></td><td></td>`; tr.children[0].textContent = id; tr.children[1].textContent = label(x);
+    tr.onclick = () => { $('id').value = id; if ($('res').value === 'users') userId = id; if ($('res').value === 'recordings') recId = id; };
+    $('tbl').appendChild(tr);
+  });
+};
+reset();
+</script></body></html>

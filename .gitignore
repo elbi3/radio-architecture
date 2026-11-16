@@ -1,0 +1,15 @@
+# Dependencies (npm ci rebuilds these inside the Docker image)
+node_modules/
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local-only files
+*.zip
